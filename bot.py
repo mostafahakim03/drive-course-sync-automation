@@ -1,3 +1,4 @@
+```python
 import os
 import re
 import json
@@ -88,7 +89,7 @@ def extract_drive_id(value: str) -> str:
     """Accept a Drive file/folder ID or a Google Drive URL."""
     value = (value or "").strip()
     if not value:
-        raise ValueError("رابط أو ID Google Drive مطلوب.")
+        raise ValueError("A Google Drive URL or ID is required.")
 
     # A plain Drive ID is usually a long URL-safe token.
     if "://" not in value and "/" not in value and " " not in value:
@@ -97,7 +98,7 @@ def extract_drive_id(value: str) -> str:
     parsed = urlparse(value)
     host = (parsed.netloc or "").lower()
     if not (host.endswith("google.com") or host.endswith("googleusercontent.com")):
-        raise ValueError("الرابط لازم يكون من Google Drive.")
+        raise ValueError("The URL must be from Google Drive.")
 
     # Common URLs:
     # /drive/folders/FOLDER_ID
@@ -112,7 +113,7 @@ def extract_drive_id(value: str) -> str:
     if query_id:
         return query_id
 
-    raise ValueError("مش قادر أستخرج ID من رابط Google Drive.")
+    raise ValueError("Could not extract an ID from the Google Drive URL.")
 
 
 def drive_client():
@@ -490,7 +491,7 @@ async def synchronize(
 
         root = await asyncio.to_thread(get_drive_file, service, root_folder_id)
         if root.get("mimeType") != FOLDER_MIME:
-            raise ValueError("الرابط اللي دخلته مش مجلد Google Drive.")
+            raise ValueError("The provided URL does not point to a Google Drive folder.")
 
         child_items = await asyncio.to_thread(list_children, service, root_folder_id)
         lecture_folders = [
@@ -524,7 +525,7 @@ async def synchronize(
                 backend_lecture = None
 
                 if lecture_id:
-                    # Confirm saved local mapping still refers to a lecture in this batch.
+                    # Confirm the saved local mapping still refers to a lecture in this batch.
                     backend_lecture = next(
                         (
                             item for item in backend_lectures
@@ -601,27 +602,27 @@ async def synchronize(
 
 def format_stats(stats: dict) -> str:
     lines = [
-        f"مجلد Drive: {stats.get('root_name', '-')}",
-        f"مجلدات المحاضرات: {stats.get('folders_found', 0)}",
-        f"محاضرات جديدة: {stats.get('lectures_created', 0)}",
-        f"ملفات جديدة: {stats.get('resources_created', 0)}",
-        f"ملفات متخطّاة: {stats.get('resources_skipped', 0)}",
+        f"Drive folder: {stats.get('root_name', '-')}",
+        f"Lecture folders: {stats.get('folders_found', 0)}",
+        f"New lectures: {stats.get('lectures_created', 0)}",
+        f"New files: {stats.get('resources_created', 0)}",
+        f"Skipped files: {stats.get('resources_skipped', 0)}",
     ]
     errors = stats.get("errors") or []
     if errors:
-        lines.append(f"أخطاء: {len(errors)}")
+        lines.append(f"Errors: {len(errors)}")
         lines.extend(f"- {error[:300]}" for error in errors[:8])
         if len(errors) > 8:
-            lines.append(f"... و{len(errors) - 8} أخطاء أخرى")
+            lines.append(f"... and {len(errors) - 8} more errors")
     else:
-        lines.append("الحالة: تمام")
+        lines.append("Status: OK")
     return "\n".join(lines)
 
 
 async def perform_sync(batch_id: str, context: ContextTypes.DEFAULT_TYPE):
     subscription = get_subscription(batch_id)
     if not subscription:
-        raise ValueError("مش لاقي Batch مسجل. استخدم /sync الأول.")
+        raise ValueError("No registered batch was found. Use /sync first.")
 
     api: BackendAPI = context.application.bot_data["api"]
     try:
@@ -642,27 +643,27 @@ async def perform_sync(batch_id: str, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
-        await reply(update, "غير مسموح لك باستخدام البوت.")
+        await reply(update, "You are not authorized to use this bot.")
         return
     await reply(
         update,
-        "أهلًا! البوت بيعمل Create للمحاضرات والملفات الجديدة من Google Drive.\n\n"
-        "الأوامر:\n"
-        "/sync <رابط_المجلد> <Batch_ID> — تسجيل المجلد وبدء المزامنة\n"
-        "/syncnow <Batch_ID> — تشغيل مزامنة فورية\n"
-        "/status — عرض المجلدات المسجلة وحالتها\n"
-        "/stop <Batch_ID> — إيقاف المزامنة التلقائية",
+        "Welcome! This bot creates new lectures and files from Google Drive.\n\n"
+        "Commands:\n"
+        "/sync <folder_url> <Batch_ID> — Register the folder and start synchronization\n"
+        "/syncnow <Batch_ID> — Run synchronization immediately\n"
+        "/status — Show registered folders and their status\n"
+        "/stop <Batch_ID> — Stop automatic synchronization",
     )
 
 
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
-        await reply(update, "غير مسموح لك باستخدام البوت.")
+        await reply(update, "You are not authorized to use this bot.")
         return
     if len(context.args) != 2:
         await reply(
             update,
-            "الاستخدام:\n/sync <رابط_مجلد_Google_Drive> <Batch_ID>",
+            "Usage:\n/sync <Google_Drive_folder_URL> <Batch_ID>",
         )
         return
 
@@ -672,71 +673,71 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         service = drive_client()
         folder = await asyncio.to_thread(get_drive_file, service, folder_id)
         if folder.get("mimeType") != FOLDER_MIME:
-            raise ValueError("الرابط مش لمجلد Google Drive.")
+            raise ValueError("The URL does not point to a Google Drive folder.")
 
         save_subscription(batch_id, folder_id, folder_input)
-        await reply(update, f"تم تسجيل المجلد «{folder.get('name', folder_id)}». بدأت المزامنة...")
+        await reply(update, f"Folder '{folder.get('name', folder_id)}' registered. Synchronization started...")
 
         stats = await perform_sync(batch_id, context)
         await reply(update, format_stats(stats))
     except Exception as exc:
         log.exception("Sync command failed")
-        await reply(update, f"فشلت المزامنة: {exc}")
+        await reply(update, f"Synchronization failed: {exc}")
 
 
 async def syncnow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
-        await reply(update, "غير مسموح لك باستخدام البوت.")
+        await reply(update, "You are not authorized to use this bot.")
         return
     if len(context.args) != 1:
-        await reply(update, "الاستخدام: /syncnow <Batch_ID>")
+        await reply(update, "Usage: /syncnow <Batch_ID>")
         return
     batch_id = context.args[0]
     if not get_subscription(batch_id):
-        await reply(update, "مش لاقي Batch مسجل. استخدم /sync الأول.")
+        await reply(update, "No registered batch was found. Use /sync first.")
         return
-    await reply(update, "بدأت المزامنة...")
+    await reply(update, "Synchronization started...")
     try:
         stats = await perform_sync(batch_id, context)
         await reply(update, format_stats(stats))
     except Exception as exc:
         log.exception("Sync-now command failed")
-        await reply(update, f"فشلت المزامنة: {exc}")
+        await reply(update, f"Synchronization failed: {exc}")
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
-        await reply(update, "غير مسموح لك باستخدام البوت.")
+        await reply(update, "You are not authorized to use this bot.")
         return
     rows = active_subscriptions()
     if not rows:
-        await reply(update, "مفيش مجلدات مفعّلة للمزامنة.")
+        await reply(update, "There are no active synchronization folders.")
         return
 
-    lines = ["المجلدات المفعّلة:"]
+    lines = ["Active folders:"]
     for row in rows:
         lines.append(
             f"\nBatch: {row['batch_id']}\n"
             f"Folder ID: {row['folder_id']}\n"
-            f"آخر مزامنة: {row['last_sync_at'] or 'لسه'}\n"
-            f"الحالة: {row['last_status'] or 'لم تتم المزامنة'}"
+            f"Last sync: {row['last_sync_at'] or 'Not yet synchronized'}\n"
+            f"Status: {row['last_status'] or 'Not synchronized yet'}"
         )
         if row["last_error"]:
-            lines.append(f"آخر خطأ: {row['last_error'][:250]}")
+            lines.append(f"Last error: {row['last_error'][:250]}")
     await reply(update, "\n".join(lines))
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
-        await reply(update, "غير مسموح لك باستخدام البوت.")
+        await reply(update, "You are not authorized to use this bot.")
         return
     if len(context.args) != 1:
-        await reply(update, "الاستخدام: /stop <Batch_ID>")
+        await reply(update, "Usage: /stop <Batch_ID>")
         return
     if stop_subscription(context.args[0]):
-        await reply(update, "تم إيقاف المزامنة التلقائية. تقدر تسجلها تاني باستخدام /sync.")
+        await reply(update, "Automatic synchronization stopped. You can register it again using /sync.")
     else:
-        await reply(update, "مش لاقي Batch بالـ ID ده.")
+        await reply(update, "No batch with that ID was found.")
 
 
 # ---------------------------------------------------------------------------
@@ -757,7 +758,7 @@ async def polling_job(context: ContextTypes.DEFAULT_TYPE):
             if stats["lectures_created"] or stats["resources_created"] or stats["errors"]:
                 allowed_ids = TELEGRAM_ALLOWED_IDS
                 message = (
-                    f"تحديث المزامنة للـ Batch {batch_id}\n"
+                    f"Synchronization update for Batch {batch_id}\n"
                     + format_stats(stats)
                 )
                 for chat_id in allowed_ids:
@@ -772,7 +773,7 @@ async def polling_job(context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_message(
                         chat_id=int(chat_id),
-                        text=f"فشلت المزامنة التلقائية للـ Batch {batch_id}: {exc}"[:4000],
+                        text=f"Automatic synchronization failed for Batch {batch_id}: {exc}"[:4000],
                     )
                 except Exception:
                     log.exception("Could not send error notification")
@@ -816,3 +817,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
