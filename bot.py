@@ -57,6 +57,7 @@ log = logging.getLogger("drive-sync-bot")
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -90,7 +91,6 @@ def extract_drive_id(value: str) -> str:
     if not value:
         raise ValueError("A Google Drive URL or ID is required.")
 
-    # A plain Drive ID is usually a long URL-safe token.
     if "://" not in value and "/" not in value and " " not in value:
         return value
 
@@ -99,15 +99,13 @@ def extract_drive_id(value: str) -> str:
     if not (host.endswith("google.com") or host.endswith("googleusercontent.com")):
         raise ValueError("The URL must be from Google Drive.")
 
-    # Common URLs:
-    # /drive/folders/FOLDER_ID
-    # /file/d/FILE_ID/view
-    # /document/d/FILE_ID/edit
-    match = re.search(r"/(?:folders|file/d|document/d|spreadsheets/d|presentation/d)/([^/?]+)", parsed.path)
+    match = re.search(
+        r"/(?:folders|file/d|document/d|spreadsheets/d|presentation/d)/([^/?]+)",
+        parsed.path,
+    )
     if match:
         return match.group(1)
 
-    # Also accept ?id=FILE_ID
     query_id = parse_qs(parsed.query).get("id", [None])[0]
     if query_id:
         return query_id
@@ -126,6 +124,7 @@ def drive_client():
 def list_children(service, folder_id: str) -> list[dict]:
     results = []
     page_token = None
+
     while True:
         response = service.files().list(
             q=f"'{folder_id}' in parents and trashed = false",
@@ -139,8 +138,10 @@ def list_children(service, folder_id: str) -> list[dict]:
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         ).execute()
+
         results.extend(response.get("files", []))
         page_token = response.get("nextPageToken")
+
         if not page_token:
             return results
 
@@ -148,23 +149,31 @@ def list_children(service, folder_id: str) -> list[dict]:
 def get_drive_file(service, file_id: str) -> dict:
     return service.files().get(
         fileId=file_id,
-        fields="id,name,mimeType,size,webViewLink,modifiedTime,resourceKey,parents,trashed",
+        fields=(
+            "id,name,mimeType,size,webViewLink,modifiedTime,"
+            "resourceKey,parents,trashed"
+        ),
         supportsAllDrives=True,
     ).execute()
 
 
 def make_drive_url(file_info: dict) -> str:
     file_id = file_info["id"]
-    url = file_info.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+    url = file_info.get("webViewLink") or (
+        f"https://drive.google.com/file/d/{file_id}/view"
+    )
     resource_key = file_info.get("resourceKey")
+
     if resource_key and "resourcekey=" not in url.lower():
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}resourcekey={resource_key}"
+
     return url
 
 
 VIDEO_EXTENSIONS = {
-    ".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".mpeg", ".mpg", ".3gp"
+    ".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm",
+    ".mpeg", ".mpg", ".3gp",
 }
 
 
@@ -176,7 +185,7 @@ def is_video(file_info: dict) -> bool:
 
 def resource_type(file_info: dict) -> str:
     """
-    Return only enum values accepted by the backend:
+    Return enum values accepted by the backend:
     VIDEO, PDF, DOCUMENT, ZIP, LINK, RAR.
     Videos use the dedicated drive-stream endpoint.
     """
@@ -186,18 +195,24 @@ def resource_type(file_info: dict) -> str:
 
     if is_video(file_info):
         return "VIDEO"
+
     if suffix == ".pdf" or mime == "application/pdf":
         return "PDF"
+
     if suffix == ".zip" or mime in {
-        "application/zip", "application/x-zip-compressed", "application/x-zip"
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-zip",
     }:
         return "ZIP"
+
     if suffix == ".rar" or mime in {
-        "application/vnd.rar", "application/x-rar-compressed", "application/x-rar"
+        "application/vnd.rar",
+        "application/x-rar-compressed",
+        "application/x-rar",
     }:
         return "RAR"
-    # Images, text files, office documents, and other ordinary files are
-    # represented by the backend's general DOCUMENT type.
+
     return "DOCUMENT"
 
 
@@ -237,6 +252,7 @@ def init_db() -> None:
                 last_error TEXT
             )
         """)
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS lectures (
                 batch_id TEXT NOT NULL,
@@ -246,6 +262,7 @@ def init_db() -> None:
                 PRIMARY KEY (batch_id, folder_id)
             )
         """)
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS resources (
                 batch_id TEXT NOT NULL,
@@ -257,23 +274,35 @@ def init_db() -> None:
                 PRIMARY KEY (batch_id, folder_id, drive_file_id)
             )
         """)
-        # Migrate databases created by an earlier bot version.
+
         columns = {
             row["name"]
-            for row in conn.execute("PRAGMA table_info(subscriptions)").fetchall()
+            for row in conn.execute(
+                "PRAGMA table_info(subscriptions)"
+            ).fetchall()
         }
+
         if "last_sync_at" not in columns:
-            conn.execute("ALTER TABLE subscriptions ADD COLUMN last_sync_at TEXT")
+            conn.execute(
+                "ALTER TABLE subscriptions ADD COLUMN last_sync_at TEXT"
+            )
+
         if "last_status" not in columns:
-            conn.execute("ALTER TABLE subscriptions ADD COLUMN last_status TEXT")
+            conn.execute(
+                "ALTER TABLE subscriptions ADD COLUMN last_status TEXT"
+            )
+
         if "last_error" not in columns:
-            conn.execute("ALTER TABLE subscriptions ADD COLUMN last_error TEXT")
+            conn.execute(
+                "ALTER TABLE subscriptions ADD COLUMN last_error TEXT"
+            )
 
 
 def get_subscription(batch_id: str):
     with db_connect() as conn:
         return conn.execute(
-            "SELECT * FROM subscriptions WHERE batch_id = ?", (batch_id,)
+            "SELECT * FROM subscriptions WHERE batch_id = ?",
+            (batch_id,),
         ).fetchone()
 
 
@@ -298,7 +327,11 @@ def save_subscription(batch_id: str, folder_id: str, folder_url: str) -> None:
         """, (batch_id, folder_id, folder_url, utc_now()))
 
 
-def set_subscription_status(batch_id: str, status: str, error: str | None = None) -> None:
+def set_subscription_status(
+    batch_id: str,
+    status: str,
+    error: str | None = None,
+) -> None:
     with db_connect() as conn:
         conn.execute("""
             UPDATE subscriptions
@@ -310,7 +343,8 @@ def set_subscription_status(batch_id: str, status: str, error: str | None = None
 def stop_subscription(batch_id: str) -> bool:
     with db_connect() as conn:
         cursor = conn.execute(
-            "UPDATE subscriptions SET active = 0 WHERE batch_id = ?", (batch_id,)
+            "UPDATE subscriptions SET active = 0 WHERE batch_id = ?",
+            (batch_id,),
         )
         return cursor.rowcount > 0
 
@@ -321,10 +355,16 @@ def get_saved_lecture_id(batch_id: str, folder_id: str):
             SELECT lecture_id FROM lectures
             WHERE batch_id = ? AND folder_id = ?
         """, (batch_id, folder_id)).fetchone()
+
         return row["lecture_id"] if row else None
 
 
-def save_lecture(batch_id: str, folder_id: str, lecture_id: str, title: str) -> None:
+def save_lecture(
+    batch_id: str,
+    folder_id: str,
+    lecture_id: str,
+    title: str,
+) -> None:
     with db_connect() as conn:
         conn.execute("""
             INSERT INTO lectures (batch_id, folder_id, lecture_id, title)
@@ -335,7 +375,11 @@ def save_lecture(batch_id: str, folder_id: str, lecture_id: str, title: str) -> 
         """, (batch_id, folder_id, str(lecture_id), title))
 
 
-def resource_already_saved(batch_id: str, folder_id: str, drive_file_id: str) -> bool:
+def resource_already_saved(
+    batch_id: str,
+    folder_id: str,
+    drive_file_id: str,
+) -> bool:
     with db_connect() as conn:
         return conn.execute("""
             SELECT 1 FROM resources
@@ -356,9 +400,12 @@ def save_resource(
                 (batch_id, folder_id, drive_file_id, resource_id, name, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            batch_id, folder_id, drive_file_id,
+            batch_id,
+            folder_id,
+            drive_file_id,
             str(resource_id) if resource_id is not None else None,
-            name, utc_now()
+            name,
+            utc_now(),
         ))
 
 
@@ -389,10 +436,15 @@ class BackendAPI:
             data = response.json()
             token = data.get("token")
             role = str(data.get("role", "")).upper()
+
             if not token:
                 raise RuntimeError(f"Login response has no token: {data}")
+
             if role and role != "ADMIN":
-                raise RuntimeError(f"Backend account must have ADMIN role; got {role}")
+                raise RuntimeError(
+                    f"Backend account must have ADMIN role; got {role}"
+                )
+
             self.token = token
             log.info("Logged in to backend as admin")
 
@@ -402,9 +454,11 @@ class BackendAPI:
 
         headers = dict(kwargs.pop("headers", {}) or {})
         headers["Authorization"] = f"Bearer {self.token}"
+
         response = await self.client.request(
             method, path, headers=headers, **kwargs
         )
+
         if response.status_code == 401:
             self.token = None
             await self.login()
@@ -412,27 +466,39 @@ class BackendAPI:
             response = await self.client.request(
                 method, path, headers=headers, **kwargs
             )
+
         response.raise_for_status()
+
         if not response.content:
             return None
+
         try:
             return response.json()
         except ValueError:
             return response.text
 
     async def get_batch_lectures(self, batch_id: str) -> list[dict]:
-        result = await self.request("GET", f"/api/lectures/batch/{batch_id}")
+        result = await self.request(
+            "GET", f"/api/lectures/batch/{batch_id}"
+        )
+
         if isinstance(result, list):
             return result
-        # Support APIs that wrap the list in a common response object.
+
         if isinstance(result, dict):
             for key in ("data", "content", "lectures", "items"):
                 if isinstance(result.get(key), list):
                     return result[key]
-        raise RuntimeError("Unexpected response from GET /api/lectures/batch/{batchId}")
+
+        raise RuntimeError(
+            "Unexpected response from GET /api/lectures/batch/{batchId}"
+        )
 
     async def create_lecture(
-        self, batch_id: str, lecture_order: int, title: str
+        self,
+        batch_id: str,
+        lecture_order: int,
+        title: str,
     ) -> dict:
         payload = {
             "batchId": batch_id,
@@ -440,13 +506,26 @@ class BackendAPI:
             "title": title,
             "published": PUBLISHED_ON_CREATE,
         }
-        result = await self.request("POST", "/api/lectures", json=payload)
+
+        result = await self.request(
+            "POST", "/api/lectures", json=payload
+        )
+
         if not isinstance(result, dict) or result.get("id") is None:
             raise RuntimeError(f"Create lecture returned no id: {result}")
+
         return result
 
+    async def publish_lecture(self, lecture_id: str):
+        return await self.request(
+            "PATCH", f"/api/lectures/{lecture_id}/publish"
+        )
+
     async def create_video_resource(
-        self, lecture_id: str, name: str, file_url: str
+        self,
+        lecture_id: str,
+        name: str,
+        file_url: str,
     ):
         return await self.request(
             "POST",
@@ -455,7 +534,11 @@ class BackendAPI:
         )
 
     async def create_drive_resource(
-        self, lecture_id: str, name: str, resource_type_value: str, file_url: str
+        self,
+        lecture_id: str,
+        name: str,
+        resource_type_value: str,
+        file_url: str,
     ):
         return await self.request(
             "POST",
@@ -488,19 +571,32 @@ async def synchronize(
     async with sync_lock:
         service = drive_client()
 
-        root = await asyncio.to_thread(get_drive_file, service, root_folder_id)
-        if root.get("mimeType") != FOLDER_MIME:
-            raise ValueError("The provided URL does not point to a Google Drive folder.")
+        root = await asyncio.to_thread(
+            get_drive_file, service, root_folder_id
+        )
 
-        child_items = await asyncio.to_thread(list_children, service, root_folder_id)
+        if root.get("mimeType") != FOLDER_MIME:
+            raise ValueError(
+                "The provided URL does not point to a Google Drive folder."
+            )
+
+        child_items = await asyncio.to_thread(
+            list_children, service, root_folder_id
+        )
+
         lecture_folders = [
             item for item in child_items
-            if item.get("mimeType") == FOLDER_MIME and not item.get("trashed")
+            if item.get("mimeType") == FOLDER_MIME
+            and not item.get("trashed")
         ]
-        lecture_folders.sort(key=lambda item: (item.get("name") or "").casefold())
+
+        lecture_folders.sort(
+            key=lambda item: (item.get("name") or "").casefold()
+        )
 
         backend_lectures = await api.get_batch_lectures(batch_id)
         backend_by_title = {}
+
         for lecture in backend_lectures:
             title = str(lecture.get("title") or "").strip().casefold()
             if title:
@@ -510,6 +606,7 @@ async def synchronize(
             "root_name": root.get("name", root_folder_id),
             "folders_found": len(lecture_folders),
             "lectures_created": 0,
+            "lectures_published": 0,
             "resources_created": 0,
             "resources_skipped": 0,
             "errors": [],
@@ -524,7 +621,6 @@ async def synchronize(
                 backend_lecture = None
 
                 if lecture_id:
-                    # Confirm the saved local mapping still refers to a lecture in this batch.
                     backend_lecture = next(
                         (
                             item for item in backend_lectures
@@ -532,35 +628,63 @@ async def synchronize(
                         ),
                         None,
                     )
+
                     if not backend_lecture:
                         lecture_id = None
 
                 if not lecture_id:
                     backend_lecture = backend_by_title.get(title.casefold())
+
                     if backend_lecture:
                         lecture_id = str(backend_lecture["id"])
                     else:
-                        created = await api.create_lecture(batch_id, order, title)
+                        created = await api.create_lecture(
+                            batch_id, order, title
+                        )
+
                         backend_lecture = created
                         lecture_id = str(created["id"])
                         stats["lectures_created"] += 1
+
                         backend_lectures.append(created)
-                        backend_by_title.setdefault(title.casefold(), created)
+                        backend_by_title.setdefault(
+                            title.casefold(), created
+                        )
 
-                    save_lecture(batch_id, folder_id, lecture_id, title)
+                        if PUBLISHED_ON_CREATE:
+                            await api.publish_lecture(lecture_id)
+                            stats["lectures_published"] += 1
+                            log.info("Published lecture %s", lecture_id)
 
-                files = await asyncio.to_thread(list_children, service, folder_id)
+                    save_lecture(
+                        batch_id, folder_id, lecture_id, title
+                    )
+
+                files = await asyncio.to_thread(
+                    list_children, service, folder_id
+                )
+
                 for file_info in files:
-                    if file_info.get("trashed") or file_info.get("mimeType") == FOLDER_MIME:
+                    if (
+                        file_info.get("trashed")
+                        or file_info.get("mimeType") == FOLDER_MIME
+                    ):
                         continue
 
                     drive_file_id = file_info.get("id")
-                    file_name = file_info.get("name") or drive_file_id or "Drive file"
+                    file_name = (
+                        file_info.get("name")
+                        or drive_file_id
+                        or "Drive file"
+                    )
+
                     if not drive_file_id:
                         stats["resources_skipped"] += 1
                         continue
 
-                    if resource_already_saved(batch_id, folder_id, drive_file_id):
+                    if resource_already_saved(
+                        batch_id, folder_id, drive_file_id
+                    ):
                         stats["resources_skipped"] += 1
                         continue
 
@@ -582,18 +706,29 @@ async def synchronize(
                             if isinstance(created_resource, dict)
                             else None
                         )
+
                         save_resource(
-                            batch_id, folder_id, drive_file_id, resource_id, file_name
+                            batch_id,
+                            folder_id,
+                            drive_file_id,
+                            resource_id,
+                            file_name,
                         )
+
                         stats["resources_created"] += 1
+
                     except Exception as exc:
                         message = f"{title} / {file_name}: {exc}"
-                        log.exception("Failed to create resource: %s", message)
+                        log.exception(
+                            "Failed to create resource: %s", message
+                        )
                         stats["errors"].append(message)
 
             except Exception as exc:
                 message = f"{title}: {exc}"
-                log.exception("Failed to synchronize lecture folder: %s", message)
+                log.exception(
+                    "Failed to synchronize lecture folder: %s", message
+                )
                 stats["errors"].append(message)
 
         return stats
@@ -604,33 +739,54 @@ def format_stats(stats: dict) -> str:
         f"Drive folder: {stats.get('root_name', '-')}",
         f"Lecture folders: {stats.get('folders_found', 0)}",
         f"New lectures: {stats.get('lectures_created', 0)}",
+        f"Published lectures: {stats.get('lectures_published', 0)}",
         f"New files: {stats.get('resources_created', 0)}",
         f"Skipped files: {stats.get('resources_skipped', 0)}",
     ]
+
     errors = stats.get("errors") or []
+
     if errors:
         lines.append(f"Errors: {len(errors)}")
         lines.extend(f"- {error[:300]}" for error in errors[:8])
+
         if len(errors) > 8:
             lines.append(f"... and {len(errors) - 8} more errors")
     else:
         lines.append("Status: OK")
+
     return "\n".join(lines)
 
 
-async def perform_sync(batch_id: str, context: ContextTypes.DEFAULT_TYPE):
+async def perform_sync(
+    batch_id: str,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     subscription = get_subscription(batch_id)
+
     if not subscription:
-        raise ValueError("No registered batch was found. Use /sync first.")
+        raise ValueError(
+            "No registered batch was found. Use /sync first."
+        )
 
     api: BackendAPI = context.application.bot_data["api"]
+
     try:
-        stats = await synchronize(batch_id, subscription["folder_id"], api)
+        stats = await synchronize(
+            batch_id, subscription["folder_id"], api
+        )
+
         if stats["errors"]:
-            set_subscription_status(batch_id, "partial", "\n".join(stats["errors"][:10]))
+            set_subscription_status(
+                batch_id,
+                "partial",
+                "\n".join(stats["errors"][:10]),
+            )
         else:
             set_subscription_status(batch_id, "ok", None)
+
         return stats
+
     except Exception as exc:
         set_subscription_status(batch_id, "error", str(exc))
         raise
@@ -640,10 +796,14 @@ async def perform_sync(batch_id: str, context: ContextTypes.DEFAULT_TYPE):
 # Telegram commands
 # ---------------------------------------------------------------------------
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not is_authorized(update):
         await reply(update, "You are not authorized to use this bot.")
         return
+
     await reply(
         update,
         "Welcome! This bot creates new lectures and files from Google Drive.\n\n"
@@ -655,10 +815,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def sync_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not is_authorized(update):
         await reply(update, "You are not authorized to use this bot.")
         return
+
     if len(context.args) != 2:
         await reply(
             update,
@@ -667,53 +831,87 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     folder_input, batch_id = context.args[0], context.args[1]
+
     try:
         folder_id = extract_drive_id(folder_input)
         service = drive_client()
-        folder = await asyncio.to_thread(get_drive_file, service, folder_id)
+
+        folder = await asyncio.to_thread(
+            get_drive_file, service, folder_id
+        )
+
         if folder.get("mimeType") != FOLDER_MIME:
-            raise ValueError("The URL does not point to a Google Drive folder.")
+            raise ValueError(
+                "The URL does not point to a Google Drive folder."
+            )
 
         save_subscription(batch_id, folder_id, folder_input)
-        await reply(update, f"Folder '{folder.get('name', folder_id)}' registered. Synchronization started...")
+
+        await reply(
+            update,
+            f"Folder '{folder.get('name', folder_id)}' registered. "
+            "Synchronization started...",
+        )
 
         stats = await perform_sync(batch_id, context)
         await reply(update, format_stats(stats))
+
     except Exception as exc:
         log.exception("Sync command failed")
         await reply(update, f"Synchronization failed: {exc}")
 
 
-async def syncnow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def syncnow_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not is_authorized(update):
         await reply(update, "You are not authorized to use this bot.")
         return
+
     if len(context.args) != 1:
         await reply(update, "Usage: /syncnow <Batch_ID>")
         return
+
     batch_id = context.args[0]
+
     if not get_subscription(batch_id):
-        await reply(update, "No registered batch was found. Use /sync first.")
+        await reply(
+            update,
+            "No registered batch was found. Use /sync first.",
+        )
         return
+
     await reply(update, "Synchronization started...")
+
     try:
         stats = await perform_sync(batch_id, context)
         await reply(update, format_stats(stats))
+
     except Exception as exc:
         log.exception("Sync-now command failed")
         await reply(update, f"Synchronization failed: {exc}")
 
 
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def status_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not is_authorized(update):
         await reply(update, "You are not authorized to use this bot.")
         return
+
     rows = active_subscriptions()
+
     if not rows:
-        await reply(update, "There are no active synchronization folders.")
+        await reply(
+            update,
+            "There are no active synchronization folders.",
+        )
         return
 
     lines = ["Active folders:"]
+
     for row in rows:
         lines.append(
             f"\nBatch: {row['batch_id']}\n"
@@ -721,20 +919,31 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Last sync: {row['last_sync_at'] or 'Not yet synchronized'}\n"
             f"Status: {row['last_status'] or 'Not synchronized yet'}"
         )
+
         if row["last_error"]:
             lines.append(f"Last error: {row['last_error'][:250]}")
+
     await reply(update, "\n".join(lines))
 
 
-async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stop_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not is_authorized(update):
         await reply(update, "You are not authorized to use this bot.")
         return
+
     if len(context.args) != 1:
         await reply(update, "Usage: /stop <Batch_ID>")
         return
+
     if stop_subscription(context.args[0]):
-        await reply(update, "Automatic synchronization stopped. You can register it again using /sync.")
+        await reply(
+            update,
+            "Automatic synchronization stopped. "
+            "You can register it again using /sync.",
+        )
     else:
         await reply(update, "No batch with that ID was found.")
 
@@ -745,34 +954,65 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def polling_job(context: ContextTypes.DEFAULT_TYPE):
     api: BackendAPI = context.application.bot_data["api"]
+
     for subscription in active_subscriptions():
         batch_id = subscription["batch_id"]
+
         try:
-            stats = await synchronize(batch_id, subscription["folder_id"], api)
+            stats = await synchronize(
+                batch_id, subscription["folder_id"], api
+            )
+
             if stats["errors"]:
-                set_subscription_status(batch_id, "partial", "\n".join(stats["errors"][:10]))
+                set_subscription_status(
+                    batch_id,
+                    "partial",
+                    "\n".join(stats["errors"][:10]),
+                )
             else:
                 set_subscription_status(batch_id, "ok", None)
 
-            if stats["lectures_created"] or stats["resources_created"] or stats["errors"]:
-                allowed_ids = TELEGRAM_ALLOWED_IDS
+            if (
+                stats["lectures_created"]
+                or stats["lectures_published"]
+                or stats["resources_created"]
+                or stats["errors"]
+            ):
                 message = (
                     f"Synchronization update for Batch {batch_id}\n"
                     + format_stats(stats)
                 )
-                for chat_id in allowed_ids:
+
+                for chat_id in TELEGRAM_ALLOWED_IDS:
                     try:
-                        await context.bot.send_message(chat_id=int(chat_id), text=message[:4000])
+                        await context.bot.send_message(
+                            chat_id=int(chat_id),
+                            text=message[:4000],
+                        )
                     except Exception:
-                        log.exception("Could not send polling notification to Telegram ID %s", chat_id)
+                        log.exception(
+                            "Could not send polling notification "
+                            "to Telegram ID %s",
+                            chat_id,
+                        )
+
         except Exception as exc:
-            log.exception("Polling failed for batch %s", batch_id)
-            set_subscription_status(batch_id, "error", str(exc))
+            log.exception(
+                "Polling failed for batch %s", batch_id
+            )
+
+            set_subscription_status(
+                batch_id, "error", str(exc)
+            )
+
             for chat_id in TELEGRAM_ALLOWED_IDS:
                 try:
                     await context.bot.send_message(
                         chat_id=int(chat_id),
-                        text=f"Automatic synchronization failed for Batch {batch_id}: {exc}"[:4000],
+                        text=(
+                            "Automatic synchronization failed "
+                            f"for Batch {batch_id}: {exc}"
+                        )[:4000],
                     )
                 except Exception:
                     log.exception("Could not send error notification")
@@ -780,25 +1020,33 @@ async def polling_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application):
     init_db()
+
     api = BackendAPI()
     application.bot_data["api"] = api
+
     application.job_queue.run_repeating(
         polling_job,
         interval=POLL_INTERVAL_SECONDS,
         first=POLL_INTERVAL_SECONDS,
         name="drive-folder-polling",
     )
-    log.info("Bot started; polling interval is %s seconds", POLL_INTERVAL_SECONDS)
+
+    log.info(
+        "Bot started; polling interval is %s seconds",
+        POLL_INTERVAL_SECONDS,
+    )
 
 
 async def post_shutdown(application: Application):
     api = application.bot_data.get("api")
+
     if api:
         await api.close()
 
 
 def main():
     ensure_config()
+
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
@@ -806,12 +1054,16 @@ def main():
         .post_shutdown(post_shutdown)
         .build()
     )
+
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("sync", sync_command))
     application.add_handler(CommandHandler("syncnow", syncnow_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("stop", stop_command))
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES
+    )
 
 
 if __name__ == "__main__":
