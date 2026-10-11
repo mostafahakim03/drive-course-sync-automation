@@ -468,13 +468,13 @@ class BackendAPI:
             )
 
         if response.is_error:
-        log.error(
-            "Backend API error %s on %s: %s",
-            response.status_code,
-            path,
-            response.text[:1000],
-    )
-response.raise_for_status()
+            log.error(
+                "Backend API error %s on %s: %s",
+                response.status_code,
+                path,
+                response.text[:1000],
+        )
+        response.raise_for_status()
 
         if not response.content:
             return None
