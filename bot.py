@@ -1,3 +1,4 @@
+
 import os
 import re
 import json
@@ -33,7 +34,9 @@ TELEGRAM_ALLOWED_IDS = {
     if item.strip()
 }
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.mtccenters.com").rstrip("/")
+API_BASE_URL = os.getenv(
+    "API_BASE_URL", "https://api.mtccenters.com"
+).rstrip("/")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
@@ -41,10 +44,12 @@ GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv(
     "GOOGLE_SERVICE_ACCOUNT_FILE", "service-account.json"
 )
 DATABASE_PATH = os.getenv("DATABASE_PATH", "sync_state.sqlite3")
-POLL_INTERVAL_SECONDS = max(60, int(os.getenv("POLL_INTERVAL_SECONDS", "1800")))
-PUBLISHED_ON_CREATE = os.getenv("PUBLISHED_ON_CREATE", "false").lower() in {
-    "1", "true", "yes", "on"
-}
+POLL_INTERVAL_SECONDS = max(
+    60, int(os.getenv("POLL_INTERVAL_SECONDS", "1800"))
+)
+PUBLISHED_ON_CREATE = os.getenv(
+    "PUBLISHED_ON_CREATE", "false"
+).lower() in {"1", "true", "yes", "on"}
 HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
@@ -68,6 +73,7 @@ def utc_now() -> str:
 
 def ensure_config() -> None:
     missing = []
+
     if not TELEGRAM_BOT_TOKEN:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not TELEGRAM_ALLOWED_IDS:
@@ -76,18 +82,23 @@ def ensure_config() -> None:
         missing.append("ADMIN_EMAIL")
     if not ADMIN_PASSWORD:
         missing.append("ADMIN_PASSWORD")
+
     if missing:
-        raise RuntimeError("Missing required .env settings: " + ", ".join(missing))
+        raise RuntimeError(
+            "Missing required .env settings: " + ", ".join(missing)
+        )
 
     if not Path(GOOGLE_SERVICE_ACCOUNT_FILE).is_file():
         raise RuntimeError(
-            f"Google service-account JSON not found: {GOOGLE_SERVICE_ACCOUNT_FILE}"
+            "Google service-account JSON not found: "
+            f"{GOOGLE_SERVICE_ACCOUNT_FILE}"
         )
 
 
 def extract_drive_id(value: str) -> str:
     """Accept a Drive file/folder ID or a Google Drive URL."""
     value = (value or "").strip()
+
     if not value:
         raise ValueError("A Google Drive URL or ID is required.")
 
@@ -96,17 +107,23 @@ def extract_drive_id(value: str) -> str:
 
     parsed = urlparse(value)
     host = (parsed.netloc or "").lower()
-    if not (host.endswith("google.com") or host.endswith("googleusercontent.com")):
+
+    if not (
+        host.endswith("google.com")
+        or host.endswith("googleusercontent.com")
+    ):
         raise ValueError("The URL must be from Google Drive.")
 
     match = re.search(
         r"/(?:folders|file/d|document/d|spreadsheets/d|presentation/d)/([^/?]+)",
         parsed.path,
     )
+
     if match:
         return match.group(1)
 
     query_id = parse_qs(parsed.query).get("id", [None])[0]
+
     if query_id:
         return query_id
 
@@ -118,7 +135,13 @@ def drive_client():
         GOOGLE_SERVICE_ACCOUNT_FILE,
         scopes=DRIVE_SCOPES,
     )
-    return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+    return build(
+        "drive",
+        "v3",
+        credentials=credentials,
+        cache_discovery=False,
+    )
 
 
 def list_children(service, folder_id: str) -> list[dict]:
@@ -180,6 +203,7 @@ VIDEO_EXTENSIONS = {
 def is_video(file_info: dict) -> bool:
     mime = (file_info.get("mimeType") or "").lower()
     suffix = Path(file_info.get("name", "")).suffix.lower()
+
     return mime.startswith("video/") or suffix in VIDEO_EXTENSIONS
 
 
@@ -233,8 +257,10 @@ async def reply(update: Update, text: str) -> None:
 def db_connect():
     path = Path(DATABASE_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
+
     connection = sqlite3.connect(str(path), timeout=30)
     connection.row_factory = sqlite3.Row
+
     return connection
 
 
@@ -313,7 +339,11 @@ def active_subscriptions():
         ).fetchall()
 
 
-def save_subscription(batch_id: str, folder_id: str, folder_url: str) -> None:
+def save_subscription(
+    batch_id: str,
+    folder_id: str,
+    folder_url: str,
+) -> None:
     with db_connect() as conn:
         conn.execute("""
             INSERT INTO subscriptions
@@ -346,6 +376,7 @@ def stop_subscription(batch_id: str) -> bool:
             "UPDATE subscriptions SET active = 0 WHERE batch_id = ?",
             (batch_id,),
         )
+
         return cursor.rowcount > 0
 
 
@@ -433,12 +464,15 @@ class BackendAPI:
                 json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
             )
             response.raise_for_status()
+
             data = response.json()
             token = data.get("token")
             role = str(data.get("role", "")).upper()
 
             if not token:
-                raise RuntimeError(f"Login response has no token: {data}")
+                raise RuntimeError(
+                    f"Login response has no token: {data}"
+                )
 
             if role and role != "ADMIN":
                 raise RuntimeError(
@@ -463,6 +497,7 @@ class BackendAPI:
             self.token = None
             await self.login()
             headers["Authorization"] = f"Bearer {self.token}"
+
             response = await self.client.request(
                 method, path, headers=headers, **kwargs
             )
@@ -473,7 +508,8 @@ class BackendAPI:
                 response.status_code,
                 path,
                 response.text[:1000],
-        )
+            )
+
         response.raise_for_status()
 
         if not response.content:
@@ -519,7 +555,9 @@ class BackendAPI:
         )
 
         if not isinstance(result, dict) or result.get("id") is None:
-            raise RuntimeError(f"Create lecture returned no id: {result}")
+            raise RuntimeError(
+                f"Create lecture returned no id: {result}"
+            )
 
         return result
 
@@ -559,7 +597,7 @@ class BackendAPI:
 
 
 # ---------------------------------------------------------------------------
-# Synchronization: create missing lectures/resources only
+# Synchronization
 # ---------------------------------------------------------------------------
 
 sync_lock = asyncio.Lock()
@@ -568,6 +606,19 @@ sync_lock = asyncio.Lock()
 def response_resources(lecture: dict) -> list:
     resources = lecture.get("resources")
     return resources if isinstance(resources, list) else []
+
+
+def get_lecture_order(lecture: dict) -> int | None:
+    """Safely read lectureOrder from a backend lecture."""
+    value = lecture.get("lectureOrder")
+
+    if value is None:
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def synchronize(
@@ -597,17 +648,33 @@ async def synchronize(
             and not item.get("trashed")
         ]
 
+        # Keep folder processing deterministic.
         lecture_folders.sort(
             key=lambda item: (item.get("name") or "").casefold()
         )
 
+        # Always retrieve the current backend state before allocating orders.
         backend_lectures = await api.get_batch_lectures(batch_id)
+
         backend_by_title = {}
 
         for lecture in backend_lectures:
-            title = str(lecture.get("title") or "").strip().casefold()
+            title = str(
+                lecture.get("title") or ""
+            ).strip().casefold()
+
             if title:
                 backend_by_title.setdefault(title, lecture)
+
+        # Use the backend as the source of truth for used lecture orders.
+        used_orders = {
+            order
+            for lecture in backend_lectures
+            if (order := get_lecture_order(lecture)) is not None
+        }
+
+        # New lectures start after the highest order currently in the API.
+        next_order = max(used_orders, default=0) + 1
 
         stats = {
             "root_name": root.get("name", root_folder_id),
@@ -619,14 +686,17 @@ async def synchronize(
             "errors": [],
         }
 
-        for order, folder in enumerate(lecture_folders, start=1):
+        for folder in lecture_folders:
             folder_id = folder["id"]
-            title = (folder.get("name") or f"Lecture {order}").strip()
+            title = (folder.get("name") or "Untitled Lecture").strip()
 
             try:
-                lecture_id = get_saved_lecture_id(batch_id, folder_id)
+                lecture_id = get_saved_lecture_id(
+                    batch_id, folder_id
+                )
                 backend_lecture = None
 
+                # First preference: the existing local folder-to-lecture link.
                 if lecture_id:
                     backend_lecture = next(
                         (
@@ -639,34 +709,72 @@ async def synchronize(
                     if not backend_lecture:
                         lecture_id = None
 
+                # Second preference: an existing lecture with the same title.
                 if not lecture_id:
-                    backend_lecture = backend_by_title.get(title.casefold())
+                    backend_lecture = backend_by_title.get(
+                        title.casefold()
+                    )
 
                     if backend_lecture:
                         lecture_id = str(backend_lecture["id"])
-                    else:
-                        created = await api.create_lecture(
-                            batch_id, order, title
+
+                # Only create when neither lookup found an existing lecture.
+                if not lecture_id:
+                    # Protect against an incomplete API response that omits
+                    # lectureOrder: do not guess and risk a duplicate order.
+                    if any(
+                        get_lecture_order(item) is None
+                        for item in backend_lectures
+                    ):
+                        raise RuntimeError(
+                            "At least one backend lecture has no valid "
+                            "lectureOrder. Cannot safely allocate a new order."
                         )
 
-                        backend_lecture = created
-                        lecture_id = str(created["id"])
-                        stats["lectures_created"] += 1
+                    while next_order in used_orders:
+                        next_order += 1
 
-                        backend_lectures.append(created)
-                        backend_by_title.setdefault(
-                            title.casefold(), created
-                        )
+                    allocated_order = next_order
 
-                        if PUBLISHED_ON_CREATE:
-                            await api.publish_lecture(lecture_id)
-                            stats["lectures_published"] += 1
-                            log.info("Published lecture %s", lecture_id)
-
-                    save_lecture(
-                        batch_id, folder_id, lecture_id, title
+                    log.info(
+                        "Creating lecture '%s' with order %s",
+                        title,
+                        allocated_order,
                     )
 
+                    created = await api.create_lecture(
+                        batch_id,
+                        allocated_order,
+                        title,
+                    )
+
+                    backend_lecture = created
+                    lecture_id = str(created["id"])
+
+                    stats["lectures_created"] += 1
+
+                    # Update the in-memory state immediately, so subsequent
+                    # folders in this same run cannot reuse the same order.
+                    backend_lectures.append(created)
+                    backend_by_title.setdefault(
+                        title.casefold(), created
+                    )
+                    used_orders.add(allocated_order)
+                    next_order = allocated_order + 1
+
+                    if PUBLISHED_ON_CREATE:
+                        await api.publish_lecture(lecture_id)
+                        stats["lectures_published"] += 1
+                        log.info("Published lecture %s", lecture_id)
+
+                save_lecture(
+                    batch_id,
+                    folder_id,
+                    lecture_id,
+                    title,
+                )
+
+                # Sync files under this folder to the selected lecture.
                 files = await asyncio.to_thread(
                     list_children, service, folder_id
                 )
@@ -700,12 +808,21 @@ async def synchronize(
 
                     try:
                         if kind == "VIDEO":
-                            created_resource = await api.create_video_resource(
-                                lecture_id, file_name, file_url
+                            created_resource = (
+                                await api.create_video_resource(
+                                    lecture_id,
+                                    file_name,
+                                    file_url,
+                                )
                             )
                         else:
-                            created_resource = await api.create_drive_resource(
-                                lecture_id, file_name, kind, file_url
+                            created_resource = (
+                                await api.create_drive_resource(
+                                    lecture_id,
+                                    file_name,
+                                    kind,
+                                    file_url,
+                                )
                             )
 
                         resource_id = (
@@ -726,6 +843,7 @@ async def synchronize(
 
                     except Exception as exc:
                         message = f"{title} / {file_name}: {exc}"
+
                         log.exception(
                             "Failed to create resource: %s", message
                         )
@@ -733,8 +851,10 @@ async def synchronize(
 
             except Exception as exc:
                 message = f"{title}: {exc}"
+
                 log.exception(
-                    "Failed to synchronize lecture folder: %s", message
+                    "Failed to synchronize lecture folder: %s",
+                    message,
                 )
                 stats["errors"].append(message)
 
@@ -755,7 +875,9 @@ def format_stats(stats: dict) -> str:
 
     if errors:
         lines.append(f"Errors: {len(errors)}")
-        lines.extend(f"- {error[:300]}" for error in errors[:8])
+        lines.extend(
+            f"- {error[:300]}" for error in errors[:8]
+        )
 
         if len(errors) > 8:
             lines.append(f"... and {len(errors) - 8} more errors")
@@ -780,7 +902,9 @@ async def perform_sync(
 
     try:
         stats = await synchronize(
-            batch_id, subscription["folder_id"], api
+            batch_id,
+            subscription["folder_id"],
+            api,
         )
 
         if stats["errors"]:
@@ -928,7 +1052,9 @@ async def status_command(
         )
 
         if row["last_error"]:
-            lines.append(f"Last error: {row['last_error'][:250]}")
+            lines.append(
+                f"Last error: {row['last_error'][:250]}"
+            )
 
     await reply(update, "\n".join(lines))
 
@@ -967,7 +1093,9 @@ async def polling_job(context: ContextTypes.DEFAULT_TYPE):
 
         try:
             stats = await synchronize(
-                batch_id, subscription["folder_id"], api
+                batch_id,
+                subscription["folder_id"],
+                api,
             )
 
             if stats["errors"]:
@@ -1022,7 +1150,9 @@ async def polling_job(context: ContextTypes.DEFAULT_TYPE):
                         )[:4000],
                     )
                 except Exception:
-                    log.exception("Could not send error notification")
+                    log.exception(
+                        "Could not send error notification"
+                    )
 
 
 async def post_init(application: Application):
